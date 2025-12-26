@@ -2,7 +2,7 @@
 
 An interactive D3.js dashboard visualizing electricity market data from ISO New England, including locational marginal pricing (LMP), demand patterns, and load zone analysis across the six New England states.
 
-![Dashboard Screenshot](assets/dashboard-preview.png)
+![Dashboard Screenshot](/clean-repo-2025/assets/dashboard-preview.png)
 
 ## Overview
 
