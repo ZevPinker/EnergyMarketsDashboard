@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>D3 Histogram with Multiple Charts</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f0f0;
+        }
+
+        #slider-container {
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .histogram-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .histogram {
+            margin: 10px;
+            background-color: white;
+            border: 1px solid #ccc;
+        }
+
+        svg {
+            background-color: white;
+            border: 1px solid #ccc;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="slider-container">
+        <label for="slider-min">Start Date:</label>
+        <input type="range" id="slider-min" min="1" max="365" value="1" step="1">
+        <label for="slider-max">End Date:</label>
+        <input type="range" id="slider-max" min="1" max="365" value="365" step="1">
+        <span id="slider-values">Range: Day 1 - Day 365</span>
+    </div>
+
+    <div class="histogram-container" id="histograms"></div>
+
+    <script>
+        const margin = { top: 20, right: 30, bottom: 50, left: 50 };
+        const width = 400 - margin.left - margin.right;
+        const height = 300 - margin.top - margin.bottom;
+        const datasets = [
+            "../../data/2023_ME-filt.csv",
+            "../../data/2023_NH-filt.csv",
+            "../../data/2023_VT-filt.csv",
+            "../../data/2023_CT-filt.csv",
+            "../../data/2023_RI-filt.csv",
+            "../../data/2023_SEMA-filt.csv",
+            "../../data/2023_NEMA-filt.csv",
+            "../../data/2023_WCMA-filt.csv"
+        ];
+
+        const sliderMin = document.getElementById("slider-min");
+        const sliderMax = document.getElementById("slider-max");
+        const sliderValues = document.getElementById("slider-values");
+        const histogramsContainer = document.getElementById("histograms");
+
+        const allData = [];
+
+        datasets.forEach((dataset, index) => {
+            const container = document.createElement("div");
+            container.classList.add("histogram");
+            container.id = `histogram${index}`;
+            histogramsContainer.appendChild(container);
+
+            const svg = d3.select(`#histogram${index}`)
+                .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left}, ${margin.top})`);
+            svg.append("text")
+                .attr("x", width / 2)
+                .attr("y", -5) // Position above the chart
+                .attr("text-anchor", "middle")
+                .style("font-size", "14px")
+                .style("font-weight", "bold")
+                .text(`Dataset ${datasets[index]}`); // Replace with a meaningful label
+
+
+            d3.csv(dataset).then(data => {
+                // Parse and clean data
+                data.forEach(d => {
+                    d.Date = new Date(d.Date);
+                    d.DayOfYear = getDayOfYear(d.Date);
+                    d.Avg_RT_LMP = parseFloat(d.Avg_RT_LMP);
+                });
+
+                allData[index] = data;
+
+                // Initial rendering
+                updateHistogram(index, svg);
+
+                // Add slider event listeners
+                sliderMin.addEventListener("input", () => updateHistogram(index, svg));
+                sliderMax.addEventListener("input", () => updateHistogram(index, svg));
+            }).catch(error => {
+                console.error(`Error loading dataset ${dataset}:`, error);
+            });
+        });
+
+        function updateHistogram(index, svg) {
+            const minDay = parseInt(sliderMin.value, 10);
+            const maxDay = parseInt(sliderMax.value, 10);
+            sliderValues.textContent = `Range: Day ${minDay} - Day ${maxDay}`;
+
+            const filteredData = allData[index]?.filter(d => d.DayOfYear >= minDay && d.DayOfYear <= maxDay) || [];
+
+            const avgRTValues = filteredData.map(d => d.Avg_RT_LMP);
+
+            const x = d3.scaleLinear()
+                .domain([d3.min(avgRTValues) || 0, d3.max(avgRTValues) || 1])
+                .range([0, width]);
+
+            const histogram = d3.histogram()
+                .value(d => d)
+                .domain(x.domain())
+                .thresholds(x.ticks(20));
+
+            const bins = histogram(avgRTValues);
+
+            const y = d3.scaleLinear()
+                .domain([0, 180])
+                .range([height, 0]);
+
+            svg.selectAll("rect").remove();
+            svg.selectAll(".axis").remove();
+
+            svg.append("g")
+                .attr("transform", `translate(0, ${height})`)
+                .attr("class", "axis")
+                .call(d3.axisBottom(x));
+
+            svg.append("g")
+                .attr("class", "axis")
+                .call(d3.axisLeft(y));
+
+            svg.selectAll("rect")
+                .data(bins)
+                .enter()
+                .append("rect")
+                .attr("x", d => x(d.x0))
+                .attr("y", d => y(d.length))
+                .attr("width", d => Math.max(x(d.x1) - x(d.x0) - 1, 0))
+                .attr("height", d => height - y(d.length))
+                .attr("fill", "steelblue");
+        }
+
+        function getDayOfYear(date) {
+            const start = new Date(date.getFullYear(), 0, 0);
+            const diff = date - start + (start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000;
+            const oneDay = 1000 * 60 * 60 * 24;
+            return Math.floor(diff / oneDay);
+        }
+    </script>
+</body>
+
+</html>

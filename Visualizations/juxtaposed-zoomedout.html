@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Combined D3 Visualizations</title>
+
+    <!-- D3 JS -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+
+    <!-- noUiSlider CSS & JS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.0/nouislider.min.css"
+        crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.0/nouislider.min.js"
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4e1d0;
+
+        }
+
+        /* Main container for the split layout */
+        .main-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr; /* Equal thirds */
+            height: 100vh; /* Full viewport height */
+            gap: 0; /* No spacing between columns */
+        }
+
+        .map-container {
+            background-color: white;
+            border-right: 1px solid #ccc;
+            display: flex;
+            flex-direction: column; /* Aligns title and map vertically */
+            justify-content: flex-start; /* Align items to the top */
+            align-items: center; /* Center the map horizontally */
+            padding: 20px;
+        }
+
+        .map-container h1 {
+            margin: 0; /* Remove default margins */
+            padding-bottom: 10px; /* Add some space between title and map */
+            text-align: center; /* Center the title */
+            font-size: 18px; /* Adjust size as needed */
+            font-weight: bold;
+        }
+
+        #map {
+            width: 100%; /* Make the SVG responsive to the container's width */
+            height: 500px; /* Adjust height of the map */
+            border: 1px solid #ccc;
+        }
+
+
+        /* Middle third for histograms */
+        .histograms-wrapper {
+            background-color: white;
+            border-right: 1px solid #ccc;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            gap: 20px;
+            overflow-y: auto; /* Allow scrolling if content overflows */
+        }
+
+        /* Right third for day-of-week charts */
+        .day-of-week-charts-wrapper {
+            background-color: white;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            gap: 20px;
+            overflow-y: auto; /* Allow scrolling if content overflows */
+        }
+
+        h1 {
+            text-align: center;
+            margin: 0;
+            padding: 10px;
+            font-size: 18px;
+            background-color: #f7f7f7;
+            border-bottom: 1px solid #ccc;
+        }
+
+        svg {
+            background-color: white;
+            border: 1px solid #ccc;
+        }
+        #slider-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 20px 0;
+        }
+
+        #slider-values {
+            margin-top: 10px;
+            font-size: 14px;
+        }
+
+        .radio-group {
+            display: flex;
+            justify-content: flex-end; /* Move the radio buttons to the right */
+            margin-top: 20px; /* Add space on top if necessary */
+            margin-right: 60px; /* Add space from the right edge */
+        }
+
+        /* noUiSlider custom styling */
+        .noUi-target,
+        .noUi-target * {
+            box-sizing: border-box;
+        }
+
+        .noUi-target {
+            width: 300px;
+            margin: 0 auto;
+
+        }
+         /* Style for the connecting part between the handles */
+        .noUi-connect {
+            background: #007BFF;  /* Color for the connected portion of the slider */
+        }
+            /* Style for the handle when it is being hovered */
+        .noUi-handle:hover {
+        background: #0056b3;  /* Darker shade when focused */
+        }
+
+        .tooltip {
+            position: absolute;
+            text-align: center;
+            padding: 5px;
+            font-size: 12px;
+            background: #333;
+            color: white;
+            border-radius: 5px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        text {
+            fill: black;
+        }
+
+        svg {
+            background-color: white;
+            border: 1px solid #ccc;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Slider Container -->
+    <div id="slider-container">
+        <div id="range-slider"></div>
+        <span id="slider-values">Range: Day 1 - Day 365</span>
+    </div>
+
+    <!-- Radio Buttons -->
+    <div class="radio-group">
+        <label>
+            <input type="radio" name="options" value="avg_peak" checked>
+            Average Peak Demand
+        </label>
+        <label>
+            <input type="radio" name="options" value="avg_min">
+            Average Minimum Demand
+        </label>
+    </div>
+
+        <div class="main-container">
+            <!-- Left third: Map -->
+            <div class="map-container">
+                <h1>Choropleth Map With Color Coded Energy Ratios</h1>
+                <svg id="map"></svg>
+            </div>
+        
+            <!-- Middle third: Histograms -->
+            <div class="histograms-wrapper">
+                <h1>Price Frequency Histograms</h1>
+                <div id="histograms"></div>
+            </div>
+        
+            <!-- Right third: Day-of-Week Charts -->
+            <div class="day-of-week-charts-wrapper">
+                <h1>Day-of-Week Charts</h1>
+                <div id="day-of-week-charts"></div>
+            </div>
+        </div>
+    <div class="tooltip"></div>
+
+    <script>
+        // Global configuration and state
+        const margin = { top: 20, right: 30, bottom: 50, left: 50 };
+        const w = 400 - margin.left - margin.right;
+        const h = 300 - margin.top - margin.bottom;
+
+        let selectedOption = "avg_peak"; // For radio buttons
+
+        // Datasets (example paths)
+        const datasets = [
+            "../data/2023_ME-filt.csv",
+            "../data/2023_NH-filt.csv",
+            "../data/2023_VT-filt.csv",
+            "../data/2023_CT-filt.csv",
+            "../data/2023_RI-filt.csv",
+            "../data/2023_SEMA-filt.csv",
+            "../data/2023_NEMA-filt.csv",
+            "../data/2023_WCMA-filt.csv"
+        ];
+        const regions = [
+            "Maine",
+            "New Hampshire",
+            "Vermont",
+            "Connecticut",
+            "Rhode Island",
+            "South East Massachusetts",
+            "North East Massachusetts",
+            "Worcester Massachusetts"
+        ];
+
+        const parseDate = d3.timeParse("%Y-%m-%d");
+
+        Date.prototype.getDayOfYear = function () {
+            const start = new Date(this.getFullYear(), 0, 0);
+            const diff = this - start + (start.getTimezoneOffset() - this.getTimezoneOffset()) * 60 * 1000;
+            const oneDay = 1000 * 60 * 60 * 24;
+            return Math.floor(diff / oneDay);
+        };
+
+        let mapData, geojson, histData = [], dayOfWeekData = [];
+
+        function getDayOfYear(date) {
+            const start = new Date(date.getFullYear(), 0, 0);
+            const diff = date - start + (start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000;
+            const oneDay = 1000 * 60 * 60 * 24;
+            return Math.floor(diff / oneDay);
+        }
+
+        // Tooltip
+        const tooltip = d3.select(".tooltip");
+
+        // Load all data
+        function loadAllData() {
+            const mapDataPromise = d3.csv("../data/fractional-energy-by-state.csv");
+            const geojsonPromise = d3.json("../Source-Data/new-england.json");
+            const histogramsPromise = Promise.all(datasets.map(d => d3.csv(d)));
+            const dayOfWeekPromise = Promise.all(datasets.map(d => d3.csv(d)));
+
+            return Promise.all([mapDataPromise, geojsonPromise, histogramsPromise, dayOfWeekPromise]);
+        }
+
+        loadAllData().then(([mapCsv, geoJson, histogramDatasets, dayOfWeekDatasets]) => {
+            mapData = mapCsv;
+            geojson = geoJson;
+
+            // Process histogram data
+            histData = histogramDatasets.map(dataset => {
+                return dataset.map(row => {
+                    row.Date = new Date(row.Date);
+                    row.DayOfYear = getDayOfYear(row.Date);
+                    row.Avg_RT_LMP = parseFloat(row.Avg_RT_LMP);
+                    return row;
+                });
+            });
+
+            // Process day-of-week data
+            dayOfWeekData = dayOfWeekDatasets.map((csvData, index) => {
+                return csvData.map(d => ({
+                    ...d,
+                    Min_Demand: parseFloat(d.Min_Demand),
+                    Peak_Demand: parseFloat(d.Peak_Demand),
+                    Date: parseDate(d.Date),
+                    DayOfYear: parseInt(d3.timeFormat("%j")(parseDate(d.Date)), 10),
+                    DT: new Date(d.Date).getDay() + 1
+                }));
+            });
+
+            initializeVisualizations();
+        }).catch(error => {
+            console.error("Error loading data:", error);
+        });
+
+            // Map Setup
+        const mapWidth = 600; // Adjust this value for desired width
+        const mapHeight = 600; // Adjust this value for desired height
+
+        const mapSvg = d3.select("#map")
+            .attr("width", mapWidth) // Set the width of the container
+            .attr("height", mapHeight) // Set the height of the container
+            .append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`)
+            .call(d3.zoom().on("zoom", (event) => {
+                mapSvg.attr("transform", event.transform);
+            }));
+        const projection = d3.geoAlbersUsa()
+            .translate([w / 4 - 500, 3 * h / 4 + 230])
+            .scale([2000]);
+        const path = d3.geoPath().projection(projection);
+        let color = d3.scaleSequential(d3.interpolateBlues);
+
+        function setupMap() {
+            mapSvg.selectAll("path")
+                .data(geojson.features)
+                .enter()
+                .append("path")
+                .attr("d", path)
+                .attr("class", "state")
+                .style("fill", "#ccc")
+                .style("stroke", "#fff")
+                .on("mouseover", (event, d) => {
+                    const stateName = d.properties.name;
+                    tooltip
+                        .style("opacity", 1)
+                        .html(`State: ${stateName}`);
+                })
+                .on("mousemove", (event, d) => {
+                    tooltip
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY + 10) + "px");
+                })
+                .on("mouseout", () => {
+                    tooltip.style("opacity", 0);
+                });
+        }
+
+        function computeAverages(data) {
+            const averages = {};
+            if (!data.length) return averages;
+            data.forEach(row => {
+                for (let state in row) {
+                    if (state !== "Date") {
+                        averages[state] = (averages[state] || 0) + parseFloat(row[state]);
+                    }
+                }
+            });
+            for (let state in averages) {
+                averages[state] /= data.length;
+            }
+            return averages;
+        }
+        const legendGroup = mapSvg.append("g")
+            .attr("id", "legend")
+            .attr("transform", `translate(50, 40) rotate(90)`)
+            .on("mouseover", (event, d) => {
+                tooltip
+                    .style("opacity", 1)
+                    .html(`For each day the "fractional energy" is calculated  by divding <br> the regionals energy field by the sum of
+                         the daily <br> energy for all regions, then the "average fractional energy" <br> is taken over the specified time interval.`)  // Add specific information here
+                    .style("left", (event.pageX + 10) + "px")  // Position the tooltip near the mouse
+                    .style("top", (event.pageY + 10) + "px"); // Adjust the positioning as necessary
+            })
+            .on("mouseout", () => {
+                tooltip.style("opacity", 0);  // Hide the tooltip when mouse moves out
+            });
+
+
+        function createLegend(color) {
+            const legendWidth = 200;
+            const legendHeight = 10;
+
+            // Clear previous legend
+            legendGroup.selectAll("*").remove();
+
+            // Create a gradient
+            const gradient = mapSvg.append("defs")
+                .append("linearGradient")
+                .attr("id", "legend-gradient")
+                .attr("x1", "0%").attr("x2", "100%")
+                .attr("y1", "0%").attr("y2", "0%");
+
+            const stops = d3.range(0, 1.1, 0.1).map(t => ({
+                offset: `${t * 100}%`,
+                color: color(t)
+            }));
+
+            gradient.selectAll("stop")
+                .data(stops)
+                .enter()
+                .append("stop")
+                .attr("offset", d => d.offset)
+                .attr("stop-color", d => d.color);
+
+            // Draw the color bar
+            legendGroup.append("rect")
+                .attr("width", legendWidth)
+                .attr("height", legendHeight)
+                .style("fill", "url(#legend-gradient)");
+
+            // Draw axis
+            const legendScale = d3.scaleLinear()
+                .domain(color.domain())
+                .range([0, legendWidth]);
+
+            const legendAxis = d3.axisBottom(legendScale).ticks(10);
+
+            const axisGroup = legendGroup.append("g")
+                .attr("transform", `translate(0, ${legendHeight})`)
+                .call(legendAxis);
+
+            axisGroup.selectAll("text")
+                .style("text-anchor", "end")
+                .attr("transform", "rotate(-90)")
+                .attr("dy", "-0.5em")
+                .attr("dx", "-1em");
+        }
+
+        function updateMap(minValue, maxValue) {
+            const filteredData = mapData.filter(d => {
+                const day = new Date(d.Date).getDayOfYear();
+                return day >= minValue && day <= maxValue;
+            });
+
+            const averages = computeAverages(filteredData);
+            const values = Object.values(averages);
+            if (values.length > 0) {
+                const min = 0;
+                const max = 0.5;
+                color.domain([min, max]);
+
+                createLegend(color);
+
+                mapSvg.selectAll(".state")
+                    .style("fill", d => {
+                        const state = d.properties.name;
+                        const value = averages[state];
+                        return value !== undefined ? color(value) : "#ccc";
+                    });
+            }
+        }
+
+        function setupHistograms() {
+            const histogramsContainer = d3.select("#histograms");
+            histogramsContainer.selectAll("*").remove();
+
+            histData.forEach((dataset, index) => {
+                const container = histogramsContainer.append("div")
+                    .attr("class", "histogram")
+                    .attr("id", `histogram${index}`);
+
+                container.append("div")
+                    .attr("class", "histogram-title")
+                    .style("text-align", "center")
+                    .style("font-size", "16px")
+                    .style("font-weight", "bold")
+                    .style("margin-bottom", "5px")
+                    .text(`Region: ${regions[index]} (USD vs. # of Days)`);
+
+                const svg = container.append("svg")
+                    .attr("width", w + margin.left + margin.right)
+                    .attr("height", h + margin.top + margin.bottom)
+
+                    .append("g")
+                    .attr("transform", `translate(${margin.left}, ${margin.top})`);
+
+                dataset.svg = svg;
+            });
+        }
+
+        function updateHistograms(minDay, maxDay) {
+            histData.forEach((dataset, index) => {
+                const svg = dataset.svg;
+                svg.selectAll("*").remove();
+
+                const filteredData = dataset.filter(d => d.DayOfYear >= minDay && d.DayOfYear <= maxDay);
+                const avgRTValues = filteredData.map(d => d.Avg_RT_LMP);
+
+                const x = d3.scaleLinear()
+                    .domain([d3.min(avgRTValues) || 0, d3.max(avgRTValues) || 1])
+                    .range([0, w]);
+
+                const histogram = d3.histogram()
+                    .value(d => d)
+                    .domain(x.domain())
+                    .thresholds(x.ticks(20));
+
+                const bins = histogram(avgRTValues);
+
+                const y = d3.scaleLinear()
+                    .domain([0, d3.max(bins, d => d.length) || 1])
+                    .range([h, 0]);
+
+                svg.append("g")
+                    .attr("transform", `translate(0, ${h})`)
+                    .call(d3.axisBottom(x));
+
+                svg.append("text")
+                    .attr("class", "x-label")
+                    .attr("x", w / 2)  // Position the label along the y-axis (half of the height)
+                    .attr("y", h + 40)  // Move the label up slightly
+                    .style("text-anchor", "middle")
+                    .style("font-size", "16px")
+                    .style("fill", "black") 
+                    .text("Daily Average Price per MWh in US Dollars");  // TODO
+
+
+                svg.append("g")
+                    .call(d3.axisLeft(y));
+
+                                // Append the y-axis label
+                svg.append("text")
+                    .attr("class", "y-label")
+                    .attr("x", - (h / 2))  // Position the label along the y-axis (half of the height)
+                    .attr("y", -40 + 8)  // Move the label up slightly
+                    .style("text-anchor", "middle")
+                    .style("font-size", "16px")
+                    .style("fill", "black")
+                    .attr("transform", "rotate(-90)")  // Rotate the label to be vertical
+                    .text("Frequency in days");  // TODO
+
+                svg.selectAll("rect")
+                    .data(bins)
+                    .enter()
+                    .append("rect")
+                    .attr("x", d => x(d.x0))
+                    .attr("y", d => y(d.length))
+                    .attr("width", d => Math.max(x(d.x1) - x(d.x0) - 1, 0))
+                    .attr("height", d => h - y(d.length))
+                    .attr("fill", "steelblue");
+            });
+        }
+
+       function setupDayOfWeekCharts() {
+            const dayContainer = d3.select("#day-of-week-charts");
+            dayContainer.selectAll("*").remove();  // Remove any previous content
+
+            // Create a chart for each dataset
+            dayOfWeekData.forEach((data, index) => {
+                const container = dayContainer.append("div")
+                    .attr("class", "visualization")
+                    .attr("id", `dayofweek-visualization${index}`);
+
+                const svg = container.append("svg")
+                    .attr("width", 400)  // Width of the chart
+                    .attr("height", 300)  // Height of the chart
+                    .append("g")
+                    .attr("transform", `translate(${60}, ${20})`);  // Padding
+
+                // Store the svg element in the data for later updates
+                data.svg = svg;
+                data.title = `Dataset ${index + 1}`;  // Add title for each dataset
+            });
+        }
+
+        function filterDataByRange(data, minDay, maxDay) {
+            // Filter data based on the day of the year
+            return data.filter(d => d.DayOfYear >= minDay && d.DayOfYear <= maxDay);
+        }
+
+        function groupDataByDayOfWeek(data, key) {
+            // Group data by the day of the week (e.g., Mon, Tue, etc.)
+            const grouped = d3.rollups(
+                data,
+                v => d3.mean(v, d => d[key]),  // Calculate the mean for each day of the week
+                d => d.DT  // Group by day of the week (e.g., Mon, Tue, etc.)
+            );
+            return grouped.map(([day, value]) => ({ DT: day, Value: value }));
+        }
+
+        const max_height = 4500;  // Max height for the y-axis
+
+        function renderDayOfWeekChart(svg, data, title) {
+            // Clear previous chart content
+            svg.selectAll("*").remove();
+
+            // Chart width and height after padding
+            const widthChart = 400 - 60 - 30;
+            const heightChart = 300 - 20 - 50;
+
+            // Set up x and y scales
+            const x = d3.scaleBand()
+                .domain(data.map(d => d.DT))  // Set domain to the days of the week
+                .range([0, widthChart])
+                .padding(0.2);
+
+            const y = d3.scaleLinear()
+                .domain([0, max_height])  // Set y-axis domain (0 to max_height)
+                .range([heightChart, 0]);
+
+            // Append x-axis to the svg
+            svg.append("g")
+                .attr("transform", `translate(0, ${heightChart})`)  // Position the x-axis at the bottom
+                .call(d3.axisBottom(x).tickFormat(d => ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][d - 1]))
+                .selectAll("text")
+                .attr("transform", "rotate(-45)")  // Rotate the labels for better readability
+                .style("text-anchor", "end");
+
+            // Append y-axis to the svg
+            svg.append("g")
+                .call(d3.axisLeft(y));
+
+            // Append the y-axis label
+            svg.append("text")
+                .attr("class", "y-label")
+                .attr("x", - (h / 2))  // Position the label along the y-axis (half of the height)
+                .attr("y", -40)  // Move the label up slightly
+                .style("text-anchor", "middle")
+                .style("font-size", "16px")
+                .style("fill", "black")
+                .attr("transform", "rotate(-90)")  // Rotate the label to be vertical
+                .text("Avg MWh Supplied");  // Label text
+
+
+            // Append bars for each day-of-week data
+            svg.selectAll(".bar")
+                .data(data)
+                .enter()
+                .append("rect")
+                .attr("class", "bar")
+                .attr("x", d => x(d.DT))  // Set the x-position for each bar
+                .attr("y", d => y(d.Value))  // Set the y-position for each bar
+                .attr("width", x.bandwidth())  // Set the width of each bar
+                .attr("height", d => heightChart - y(d.Value))  // Set the height of each bar
+                .attr("fill", "steelblue");
+
+            // Add chart title
+            svg.append("text")
+                .attr("x", widthChart / 2)
+                .attr("y", -10)
+                .attr("text-anchor", "middle")
+                .style("font-size", "14px")
+                .style("font-weight", "bold")
+                .text(title);
+        }
+
+        function updateDayOfWeekCharts(minDay, maxDay) {
+            // Update the charts based on the selected range (minDay, maxDay)
+            dayOfWeekData.forEach((dataset, index) => {
+                const svg = dataset.svg;
+                const filtered = filterDataByRange(dataset, minDay, maxDay);
+                const key = selectedOption === "avg_peak" ? "Peak_Demand" : "Min_Demand";  // Use the selected option (avg_peak or avg_min)
+                const groupedData = groupDataByDayOfWeek(filtered, key);
+                renderDayOfWeekChart(svg, groupedData, `${regions[index]} (${selectedOption === "avg_peak" ? "Measured at Peak Hour" : "Measured at Min Hour"})`);
+            });
+        }
+        function dayToDate(dayOfYear, year) {
+            const start = new Date(year, 0, 1); // Start of the year (January 1st)
+            start.setDate(dayOfYear); // Set the date to the corresponding day of the year
+            return start;
+        }
+        // Function to format a date as 'January 1st, 2023'
+        function formatDate(date) {
+            const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            const day = date.getDate();
+            const month = months[date.getMonth()];
+            const year = date.getFullYear();
+
+            // Add suffix to the day (st, nd, rd, th)
+            let suffix = "th";
+            if (day === 1 || day === 21 || day === 31) suffix = "st";
+            if (day === 2 || day === 22) suffix = "nd";
+            if (day === 3 || day === 23) suffix = "rd";
+
+            return `${month} ${day}${suffix}, ${year}`;
+        }
+        function initializeVisualizations() {
+            setupMap();
+            setupHistograms();
+            setupDayOfWeekCharts();
+            // Initialize Slider
+            const rangeSlider = document.getElementById('range-slider');
+            noUiSlider.create(rangeSlider, {
+                start: [1, 365],
+                connect: true,
+                range: {
+                    'min': 1,
+                    'max': 365
+                }
+            });
+
+            const sliderValues = document.getElementById("slider-values");
+            rangeSlider.noUiSlider.on('update', function (values, handle) {
+                const min = Math.round(values[0]);
+                const max = Math.round(values[1]);
+
+                sliderValues.textContent = `Range: ${formatDate(dayToDate(min, 2023))} - ${formatDate(dayToDate(max, 2023))}`;
+                updateVisualizations(min, max);
+            });
+
+            updateVisualizations(1, 365);
+        }
+
+        function updateVisualizations(min, max) {
+            updateMap(min, max);
+            updateHistograms(min, max);
+            updateDayOfWeekCharts(min, max);
+        }
+
+        // Radio button listener
+        document.querySelectorAll('input[name="options"]').forEach(radio => {
+            radio.addEventListener("change", () => {
+                selectedOption = document.querySelector('input[name="options"]:checked').value;
+                // Get current slider values and update visualizations
+                const values = document.getElementById('range-slider').noUiSlider.get();
+                const min = Math.round(values[0]);
+                const max = Math.round(values[1]);
+                updateVisualizations(min, max);
+            });
+        });
+    </script>
+</body>
+
+</html>

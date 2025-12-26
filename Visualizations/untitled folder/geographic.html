@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>D3: Adding data points (circles) to the map</title>
+    <script type="text/javascript" src="../d3.js"></script>
+    <style type="text/css">
+        #slider-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        #slider-values {
+            margin-top: 10px;
+            font-size: 14px;
+        }
+
+        .tooltip {
+            position: absolute;
+            text-align: center;
+            padding: 5px;
+            font-size: 12px;
+            background: #333;
+            color: white;
+            border-radius: 5px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+    </style>
+</head>
+
+<body>
+    <div id="slider-container">
+        <input type="range" id="slider-min" min="1" max="365" value="1" step="1">
+        <input type="range" id="slider-max" min="1" max="365" value="365" step="1">
+        <span id="slider-values">Range: 1 - 365</span>
+    </div>
+
+    <script type="text/javascript">
+        // Dimensions and settings
+        let w = 800;
+        let h = 600;
+
+        const sliderMin = document.getElementById("slider-min");
+        const sliderMax = document.getElementById("slider-max");
+        const sliderValues = document.getElementById("slider-values");
+
+        // Append a tooltip element
+        const tooltip = d3.select("body")
+            .append("div")
+            .attr("class", "tooltip");
+
+        // Define map projection
+        let projection = d3.geoAlbersUsa()
+            .translate([w / 2 - 1100, h / 2 + 450])
+            .scale([3500]);
+
+        let path = d3.geoPath().projection(projection);
+
+        
+        // Create SVG element
+        let svg = d3.select("body").append("svg")
+            .attr("width", w)
+            .attr("height", h);
+
+        // Load data
+        let data = {};
+        let geojson;
+
+        d3.csv("../../Data/fractional-energy-by-state.csv").then((csvData) => {
+            data.csv = csvData;
+            console.log(data.csv);
+            return d3.json("../../Source-Data/new-england.json"); // GeoJSON for states
+        }).then((json) => {
+            geojson = json;
+            setupMap();
+            updateMap();
+        });
+
+        function setupMap(data) {
+            // Draw map
+            svg.selectAll("path")
+                .data(geojson.features)
+                .enter().append("path")
+                .attr("d", path)
+                .attr("class", "state")
+                .style("stroke", "#fff")
+                .style("stroke-width", "1.5")
+                .style("fill", "#ccc")
+                .on("mouseover", (event, d) => {
+                    const stateName = d.properties.name;
+                    tooltip
+                        .style("opacity", 1)
+                        .html(`State: ${stateName} `);
+                })
+                .on("mousemove", (event, d) => {
+                    tooltip
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY + 10) + "px");
+                })
+                .on("mouseout", () => {
+                    tooltip
+                        .style("opacity", 0);
+                });
+
+        }
+        const legendGroup = svg.append("g").attr("id", "legend").attr("transform", `translate(20, 20)`);
+
+        // Define continuous color scale
+        let color = d3.scaleSequential(d3.interpolateBlues); // Using a blue gradient
+
+
+        function createLegend(colorScale) {
+                const legendWidth = 300;
+                const legendHeight = 20;
+
+                // Clear previous legend
+                legendGroup.selectAll("*").remove();
+
+                // Create a gradient
+                const gradient = svg.append("defs")
+                    .append("linearGradient")
+                    .attr("id", "legend-gradient")
+                    .attr("x1", "0%").attr("x2", "100%")
+                    .attr("y1", "0%").attr("y2", "0%");
+
+                const stops = d3.range(0,1.1, 0.1).map(t => ({
+                    offset: `${t * 100}%`,
+                    color: colorScale(t)
+                }));
+
+                gradient.selectAll("stop")
+                    .data(stops)
+                    .enter()
+                    .append("stop")
+                    .attr("offset", d => d.offset)
+                    .attr("stop-color", d => d.color);
+
+                // Draw the color bar
+                legendGroup.append("rect")
+                    .attr("width", legendWidth)
+                    .attr("height", legendHeight)
+                    .style("fill", "url(#legend-gradient)");
+
+                // Draw axis
+                const legendScale = d3.scaleLinear()
+                    .domain(colorScale.domain())
+                    .range([0, legendWidth]);
+
+
+                const legendAxis = d3.axisBottom(legendScale).ticks(10);
+
+                legendGroup.append("g")
+                    .attr("transform", `translate(0, ${legendHeight})`)
+                    .call(legendAxis);
+            }
+
+        function updateMap() {
+            const minValue = parseInt(sliderMin.value, 10);
+            const maxValue = parseInt(sliderMax.value, 10);
+            sliderValues.textContent = `Range: ${minValue} - ${maxValue}`;
+
+            // Filter and compute averages
+            const filteredData = data.csv.filter(d => {
+                const day = new Date(d.Date).getDayOfYear(); // Assuming Date column
+                return day >= minValue && day <= maxValue;
+            });
+
+            const averages = computeAverages(filteredData);
+
+            // Get values and apply a transformation for sensitivity
+            const values = Object.values(averages);
+            if (values.length > 0) {
+                const min = 0;
+                const max = .5;
+
+                // Update the color scale's domain with transformed values
+                color.domain([min, max]);
+                // Update legend
+                createLegend(color);
+
+                // Update map colors
+                svg.selectAll(".state")
+                    .style("fill", d => {
+                        const state = d.properties.name;
+                        const value = averages[state];
+                        return value !== undefined ? color(value) : "#ccc";
+                    });
+        }
+    }
+
+
+        function computeAverages(data) {
+            const averages = {};
+            data.forEach(row => {
+                for (let state in row) {
+                    if (state !== "Date") {
+                        averages[state] = (averages[state] || 0) + parseFloat(row[state]);
+                    }
+                }
+            });
+
+            // Compute averages
+            for (let state in averages) {
+                averages[state] /= data.length;
+            }
+            return averages;
+        }
+
+        // Attach slider event listeners
+        sliderMin.addEventListener("input", updateMap);
+        sliderMax.addEventListener("input", updateMap);
+
+        // Utility function to get the day of year
+        Date.prototype.getDayOfYear = function () {
+            const start = new Date(this.getFullYear(), 0, 0);
+            const diff = this - start + (start.getTimezoneOffset() - this.getTimezoneOffset()) * 60 * 1000;
+            const oneDay = 1000 * 60 * 60 * 24;
+            return Math.floor(diff / oneDay);
+        };
+    </script>
+
+</body>
+
+</html>

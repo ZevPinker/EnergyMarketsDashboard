@@ -1,0 +1,25 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+venv/
+.env/
+
+# Node
+node_modules/
+
+# VSCode
+.vscode/
+
+# Data files
+data/*.csv
+
+# OneDrive temp
+~$*
+
+# Misc
+*.log

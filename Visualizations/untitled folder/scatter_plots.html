@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>D3 Scatter Plots with Date Tooltip</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f0f0;
+        }
+
+        svg {
+            background-color: white;
+            border: 1px solid #ccc;
+        }
+
+        .tooltip {
+            position: absolute;
+            text-align: center;
+            padding: 5px;
+            font-size: 12px;
+            background: #333;
+            color: white;
+            border-radius: 5px;
+            pointer-events: none;
+        }
+
+        .radio-group {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Scatter Plots for Data Exploration</h1>
+    <div class="radio-group">
+        <label>
+            <input type="radio" name="options" value="option1" checked>
+            Demand (Min Vs. Peak)
+        </label>
+        <label>
+            <input type="radio" name="options" value="option2">
+            Predictability (Peak Hour Vs. Prediction error)
+        </label>
+    </div>
+    <div id="visualization"></div>
+    <div class="tooltip" style="opacity: 0;"></div>
+
+    <script>
+        const margin = { top: 20, right: 30, bottom: 30, left: 50 };
+        const width = 800 - margin.left - margin.right;
+        const height = 600 - margin.top - margin.bottom;
+
+        const tooltip = d3.select(".tooltip");
+        const svgContainer = d3.select("#visualization");
+
+        const svg = svgContainer
+            .append("svg")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+            .append("g")
+            .attr("transform", `translate(${margin.left}, ${margin.top})`);
+
+        // Function to render plots based on the selected option
+        function renderPlot(data, option) {
+            // Clear the SVG
+            svg.selectAll("*").remove();
+
+            let x, y, xKey, yKey, colorFn;
+
+            if (option === "option1") {
+                xKey = "Min_Demand";
+                yKey = "Peak_Demand";
+                colorFn = () => "steelblue";
+
+            } else if (option === "option2") {
+                xKey = "Peak_Hour";
+                yKey = (d) => Math.abs(d.Avg_DA_LMP - d.Avg_RT_LMP);
+                colorFn = (d) =>
+                    d.Avg_DA_LMP - d.Avg_RT_LMP > 0
+                        ? "steelblue"
+                        : d.Avg_DA_LMP - d.Avg_RT_LMP < 0
+                            ? "red"
+                            : "green";
+            }
+
+            // Define scales
+            x = d3.scaleLinear()
+                .domain([0, d3.max(data, d => typeof xKey === "function" ? xKey(d) : d[xKey])])
+                .range([0, width]);
+
+            y = d3.scaleLinear()
+                .domain([0, d3.max(data, d => typeof yKey === "function" ? yKey(d) : d[yKey])])
+                .range([height, 0]);
+
+            // Add axes
+            svg.append("g")
+                .attr("transform", `translate(0, ${height})`)
+                .call(d3.axisBottom(x));
+
+            svg.append("g")
+                .call(d3.axisLeft(y));
+
+            // Add data points with tooltip
+            svg.selectAll("circle")
+                .data(data)
+                .enter()
+                .append("circle")
+                .attr("cx", d => x(typeof xKey === "function" ? xKey(d) : d[xKey]))
+                .attr("cy", d => y(typeof yKey === "function" ? yKey(d) : d[yKey]))
+                .attr("r", 4)
+                .attr("fill", colorFn)
+                .attr("stroke", "white")
+                .attr("stroke-width", 1.5)
+                .on("mouseover", (event, d) => {
+                    if (option === "option2") {
+                        tooltip
+                            .style("opacity", 1)
+                            .html(`Date: ${d.Date}<br>Peak Hour: ${d.Peak_Hour}<br>DA - RT Difference: $${(d.Avg_DA_LMP - d.Avg_RT_LMP).toFixed(2)} <br> Day of Week: ${d.DT}`);
+                    } else {
+                        tooltip
+                            .style("opacity", 1)
+                            .html(`Date: ${d.Date}<br>Min Demand: ${d.Min_Demand}<br>Peak Demand: ${d.Peak_Demand}<br> Day of Week: ${d.DT}`);
+                    }
+                    tooltip
+                        .style("left", `${event.pageX + 10}px`)
+                        .style("top", `${event.pageY - 25}px`);
+
+                    d3.select(event.target)
+                        .attr("r", 6); // Highlight circle
+                })
+
+                .on("mouseout", (event) => {
+                    tooltip.style("opacity", 0);
+
+                    d3.select(event.target)
+                        .attr("r", 4); // Reset circle size
+                });
+        }
+
+        // Load CSV data and add event listener
+        d3.csv("../../data/2023_CT-filt.csv").then(data => {
+            data.forEach(d => {
+                d.Min_Demand = parseFloat(d.Min_Demand);
+                d.Peak_Demand = parseFloat(d.Peak_Demand);
+                d.Peak_Hour = parseFloat(d.Peak_Hour);
+                d.Avg_DA_LMP = parseFloat(d.Avg_DA_LMP);
+                d.Avg_RT_LMP = parseFloat(d.Avg_RT_LMP);
+            });
+
+            // Render the initial plot
+            renderPlot(data, "option1");
+
+            // Add event listener to radio buttons
+            document.querySelectorAll('input[name="options"]').forEach(radio => {
+                radio.addEventListener("change", (event) => {
+                    const selectedOption = event.target.value;
+                    renderPlot(data, selectedOption);
+                });
+            });
+        }).catch(error => {
+            console.error("Error loading or parsing the data:", error);
+        });
+    </script>
+</body>
+
+</html>

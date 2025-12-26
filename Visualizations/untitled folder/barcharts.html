@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Avg Peak and Minimum Demand for Days of Week</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f0f0;
+        }
+
+        svg {
+            background-color: white;
+            border: 1px solid #ccc;
+        }
+         #visualizations {
+        display: grid;
+        grid-template-rows: repeat(4, 1fr); /* 4 columns */
+        grid-template-columns: repeat(2, auto); /* 2 rows */
+        gap: 20px 20px; /* Space between charts */
+        width: 100%; /* Full width */
+        justify-items: center; /* Center each chart */
+        }
+
+        .visualization {
+            width: 400px; /* Chart width including margins */
+        }
+
+        .radio-group {
+            margin-bottom: 20px;
+        }
+
+        .tooltip {
+            position: absolute;
+            text-align: center;
+            padding: 5px;
+            font-size: 12px;
+            background: #333;
+            color: white;
+            border-radius: 5px;
+            pointer-events: none;
+        }
+
+        #slider-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 20px;
+            margin-top: 40px
+        }
+
+        #slider-values {
+            margin-top: 10px;
+            font-size: 14px;
+        }
+
+        input[type="range"] {
+            width: 300px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Avg Peak and Minimum Demand for Days of Week</h1>
+    <div class="radio-group">
+        <label>
+            <input type="radio" name="options" value="avg_peak" checked>
+            Average Peak Demand
+        </label>
+        <label>
+            <input type="radio" name="options" value="avg_min">
+            Average Minimum Demand
+        </label>
+    </div>
+    <div id="visualizations"></div>
+    <div id="slider-container">
+        <input type="range" id="slider-min" min="1" max="365" value="1" step="1">
+        <input type="range" id="slider-max" min="1" max="365" value="365" step="1">
+        <span id="slider-values">Range: 1 - 365</span>
+    </div>
+
+    <script>
+        const margin = { top: 20, right: 30, bottom: 50, left: 60 };
+        const width = 400 - margin.left - margin.right;
+        const height = 300 - margin.top - margin.bottom;
+        const max_height = 4500;
+        const datasets = [
+            "../../data/2023_ME-filt.csv",
+            "../../data/2023_NH-filt.csv",
+            "../../data/2023_VT-filt.csv",
+            "../../data/2023_CT-filt.csv",
+            "../../data/2023_RI-filt.csv",
+            "../../data/2023_SEMA-filt.csv",
+            "../../data/2023_NEMA-filt.csv",
+            "../../data/2023_WCMA-filt.csv"
+        ];
+
+        const sliderMin = document.getElementById("slider-min");
+        const sliderMax = document.getElementById("slider-max");
+        const sliderValues = document.getElementById("slider-values");
+        const visualizationsContainer = d3.select("#visualizations");
+
+        const parseDate = d3.timeParse("%Y-%m-%d");
+        const dayOfYear = d3.timeFormat("%j");
+
+        let allData = [];
+
+        // Create containers for each chart
+        datasets.forEach((dataset, index) => {
+            const container = document.createElement("div");
+            container.classList.add("visualization");
+            container.id = `visualization${index}`;
+            visualizationsContainer.node().appendChild(container);
+
+            const svg = d3.select(`#visualization${index}`)
+                .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left}, ${margin.top})`);
+
+            d3.csv(dataset).then(csvData => {
+                const processedData = csvData.map(d => ({
+                    ...d,
+                    Min_Demand: parseFloat(d.Min_Demand),
+                    Peak_Demand: parseFloat(d.Peak_Demand),
+                    Date: parseDate(d.Date),
+                    DayOfYear: parseInt(dayOfYear(parseDate(d.Date)), 10),
+                    DT: new Date(d.Date).getDay() + 1
+                }));
+
+                allData[index] = { svg, data: processedData, title: `Dataset ${index + 1}` };
+
+                updateCharts();
+            }).catch(error => {
+                console.error(`Error loading dataset ${dataset}:`, error);
+            });
+        });
+
+        function filterDataByRange(data, minDay, maxDay) {
+            return data.filter(d => d.DayOfYear >= minDay && d.DayOfYear <= maxDay);
+        }
+
+        function groupData(data, key) {
+            const grouped = d3.rollups(
+                data,
+                (v) => d3.mean(v, (d) => d[key]),
+                (d) => d.DT
+            );
+            return grouped.map(([day, value]) => ({ DT: day, Value: value }));
+        }
+
+        function renderBarChart(svg, data, title) {
+            svg.selectAll("*").remove();
+
+            const x = d3.scaleBand()
+                .domain(data.map(d => d.DT))
+                .range([0, width])
+                .padding(0.2);
+
+            const y = d3.scaleLinear()
+                .domain([0, max_height])
+                .range([height, 0]);
+
+            svg.append("g")
+                .attr("transform", `translate(0, ${height})`)
+                .call(d3.axisBottom(x).tickFormat(d => ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][d - 1]))
+                .selectAll("text")
+                .attr("transform", "rotate(-45)")
+                .style("text-anchor", "end");
+
+            svg.append("g")
+                .call(d3.axisLeft(y));
+
+            svg.selectAll(".bar")
+                .data(data)
+                .enter()
+                .append("rect")
+                .attr("class", "bar")
+                .attr("x", d => x(d.DT))
+                .attr("y", d => y(d.Value))
+                .attr("width", x.bandwidth())
+                .attr("height", d => height - y(d.Value))
+                .attr("fill", "steelblue");
+
+            svg.append("text")
+                .attr("x", width / 2)
+                .attr("y", -10)
+                .attr("text-anchor", "middle")
+                .style("font-size", "14px")
+                .style("font-weight", "bold")
+                .text(title);
+        }
+
+        function updateCharts() {
+            const minValue = parseInt(sliderMin.value, 10);
+            const maxValue = parseInt(sliderMax.value, 10);
+            sliderValues.textContent = `Range: Day ${minValue} - Day ${maxValue}`;
+
+            const selectedOption = document.querySelector('input[name="options"]:checked').value;
+
+            allData.forEach(({ svg, data, title }, index) => {
+                const filteredData = filterDataByRange(data, minValue, maxValue);
+                const groupedData = groupData(filteredData, selectedOption === "avg_peak" ? "Peak_Demand" : "Min_Demand");
+                renderBarChart(svg, groupedData, `${title} (${selectedOption === "avg_peak" ? "Peak" : "Min"})`);
+            });
+        }
+
+        sliderMin.addEventListener("input", updateCharts);
+        sliderMax.addEventListener("input", updateCharts);
+        document.querySelectorAll('input[name="options"]').forEach(radio => {
+            radio.addEventListener("change", updateCharts);
+        });
+    </script>
+</body>
+
+
+</html>
