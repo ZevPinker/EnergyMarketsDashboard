@@ -1,0 +1,25 @@
+# macOS
+.DS_Store
+._*
+__MACOSX/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Office temp files
+~$*
+
+# Node (if you add dependencies later)
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+.env
+
+# Logs
+*.log
