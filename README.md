@@ -77,7 +77,7 @@ python -m http.server 8000
 
 **Zev Pinker**  
 Yale University, B.S. Computer Science  
-[GitHub](https://github.com/ZevPinker) • [LinkedIn](https://linkedin.com/in/zevpinker)
+[GitHub](https://github.com/ZevPinker) • [LinkedIn](https://www.linkedin.com/in/zev-pinker-69a680279/)
 
 ## License
 
